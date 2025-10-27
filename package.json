@@ -18,7 +18,7 @@
     "tiktok-scraper-ts": "^2.0.6",
     "instagram-url-direct": "^1.0.7",
     "twitter-url-direct": "^1.1.2",
-    "fb-video-downloader": "^1.0.6"
+    "fb-downloader-scraper": "^1.0.5"
   },
   "engines": {
     "node": ">=18.0.0"
