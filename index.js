@@ -1,13 +1,13 @@
 import TelegramBot from "node-telegram-bot-api";
-import { exec } from "child_process";
 import express from "express";
 import fs from "fs";
 import axios from "axios";
+import ytdlp from "yt-dlp-exec"; // مكتبة تعمل على Replit بدون أوامر system
 
-// 🟢 توكن البوت
-const TOKEN = process.env.BOT_TOKEN || "8461219655:AAF1jnw_IpKuu1tdXJSW9ubnjRe5pxlMoxo";
+// 🟢 توكن البوت (مضمّن)
+const TOKEN = "8461219655:AAF1jnw_IpKuu1tdXJSW9ubnjRe5pxlMoxo";
 
-// 🟢 تهيئة البوت والسيرفر
+// 🟢 إنشاء البوت والسيرفر
 const bot = new TelegramBot(TOKEN, { polling: true });
 const app = express();
 
@@ -41,7 +41,6 @@ bot.on("message", async (msg) => {
 
   const url = match[0];
 
-  // 🧠 عرض لوحة الأزرار التفاعلية
   bot.sendMessage(chatId, "🎬 اختر نوع التحميل المطلوب:", {
     reply_markup: {
       inline_keyboard: [
@@ -49,13 +48,13 @@ bot.on("message", async (msg) => {
           { text: "🎥 تحميل الفيديو", callback_data: `video|${url}` },
           { text: "🎵 تحميل الصوت (MP3)", callback_data: `audio|${url}` },
         ],
-        [{ text: "🖼️ بدون علامة مائية (TikTok / IG)", callback_data: `nowm|${url}` }],
+        [{ text: "🖼️ بدون علامة مائية", callback_data: `nowm|${url}` }],
       ],
     },
   });
 });
 
-// 🧠 التعامل مع ضغط الأزرار
+// 🧠 التعامل مع الأزرار
 bot.on("callback_query", async (query) => {
   const chatId = query.message.chat.id;
   const [type, url] = query.data.split("|");
@@ -67,69 +66,53 @@ bot.on("callback_query", async (query) => {
   const output = `media_${timestamp}.${type === "audio" ? "mp3" : "mp4"}`;
 
   try {
-    // ⚙️ تحديد الأمر حسب نوع التحميل
-    let command = "";
-
-    if (type === "video") {
-      command = `yt-dlp -f mp4 -o ${output} "${url}"`;
-    } else if (type === "audio") {
-      command = `yt-dlp -x --audio-format mp3 -o ${output} "${url}"`;
+    let options = {};
+    if (type === "audio") {
+      options = {
+        extractAudio: true,
+        audioFormat: "mp3",
+        output,
+      };
+    } else if (type === "video") {
+      options = { format: "mp4", output };
     } else if (type === "nowm") {
-      // تحميل بدون علامة مائية (TikTok / IG)
-      try {
-        const apiRes = await axios.get(`https://api.vevioz.com/api/button/${encodeURIComponent(url)}`);
-        const cleanUrl = apiRes.data?.url || url;
-        command = `yt-dlp -f mp4 -o ${output} "${cleanUrl}"`;
-      } catch {
-        command = `yt-dlp -f mp4 -o ${output} "${url}"`;
+      options = { format: "mp4", output };
+    }
+
+    await ytdlp(url, options);
+
+    if (!fs.existsSync(output)) {
+      return bot.sendMessage(chatId, "❌ لم يتم العثور على الملف بعد التحميل.");
+    }
+
+    const sizeMB = fs.statSync(output).size / (1024 * 1024);
+
+    if (sizeMB > 48) {
+      const stream = fs.createReadStream(output);
+      const upload = await axios.post("https://transfer.sh/", stream, {
+        headers: { "Content-Type": "application/octet-stream" },
+      });
+      await bot.sendMessage(chatId, `📦 الملف كبير جدًا، يمكنك التحميل من الرابط:\n${upload.data}`);
+    } else {
+      if (type === "audio") {
+        await bot.sendAudio(chatId, fs.createReadStream(output), {
+          caption: "🎧 تم التحميل بواسطة بوت الواقدي 💚",
+        });
+      } else {
+        await bot.sendVideo(chatId, fs.createReadStream(output), {
+          caption: "🎬 تم التحميل بنجاح بواسطة بوت الواقدي 💚",
+        });
       }
     }
 
-    exec(command, async (error) => {
-      if (error) {
-        console.error("❌ خطأ:", error);
-        bot.sendMessage(chatId, "⚠️ حدث خطأ أثناء التحميل، حاول لاحقاً.");
-        return;
-      }
-
-      if (!fs.existsSync(output)) {
-        bot.sendMessage(chatId, "❌ لم يتم العثور على الملف بعد التحميل.");
-        return;
-      }
-
-      // 🧮 فحص حجم الملف قبل الإرسال
-      const sizeMB = fs.statSync(output).size / (1024 * 1024);
-
-      if (sizeMB > 48) {
-        bot.sendMessage(chatId, "📦 الملف كبير جداً، إليك رابط تحميل خارجي:");
-
-        const upload = await axios.post("https://transfer.sh/", fs.createReadStream(output), {
-          headers: { "Content-Type": "application/octet-stream" },
-        });
-
-        bot.sendMessage(chatId, upload.data);
-      } else {
-        if (type === "audio") {
-          await bot.sendAudio(chatId, fs.createReadStream(output), {
-            caption: "🎧 تم التحميل بواسطة بوت الواقدي 💚",
-          });
-        } else {
-          await bot.sendVideo(chatId, fs.createReadStream(output), {
-            caption: "🎬 تم التحميل بنجاح بواسطة بوت الواقدي 💚",
-          });
-        }
-      }
-
-      // 🧹 حذف الملف المؤقت
-      fs.unlinkSync(output);
-    });
+    fs.unlinkSync(output);
   } catch (err) {
-    console.error(err);
-    bot.sendMessage(chatId, "❌ حدث خطأ أثناء التحميل.");
+    console.error("❌ خطأ:", err);
+    bot.sendMessage(chatId, "⚠️ حدث خطأ أثناء التحميل. حاول مرة أخرى.");
   }
 });
 
-// 🌐 تشغيل السيرفر (للاستضافة على Render أو GitHub Pages)
+// 🌐 تشغيل السيرفر (للـ Replit أو Render)
 app.get("/", (req, res) => {
   res.send("✅ بوت الواقدي لتحميل الفيديوهات يعمل بنجاح 🎥");
 });
