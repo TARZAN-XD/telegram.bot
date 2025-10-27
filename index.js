@@ -5,7 +5,7 @@ import fs from "fs";
 import axios from "axios";
 
 // 🟢 توكن البوت
-const TOKEN = process.env.BOT_TOKEN || "ضع_توكن_البوت_هنا";
+const TOKEN = process.env.BOT_TOKEN || "8461219655:AAF1jnw_IpKuu1tdXJSW9ubnjRe5pxlMoxo";
 
 // 🟢 تهيئة البوت والسيرفر
 const bot = new TelegramBot(TOKEN, { polling: true });
